@@ -1,5 +1,6 @@
 // api/webhook.js
 
+const express = require('express');
 const { Bot } = require('grammy');
 const supabase = require('../lib/supabase');
 const { analyzeSentiment } = require('../lib/sentiment');
@@ -9,7 +10,10 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) throw new Error('TELEGRAM_BOT_TOKEN is unset');
 
 const bot = new Bot(token);
-let initialized = false;
+
+// Register commands
+bot.command('sentiment', handleSentimentCommand);
+bot.command('momentum', handleMomentumCommand);
 
 // Handle regular messages
 bot.on('message:text', async (ctx, next) => {
@@ -49,29 +53,22 @@ bot.on('message:text', async (ctx, next) => {
     }
 });
 
-// Commands
-bot.command('sentiment', handleSentimentCommand);
-bot.command('momentum', handleMomentumCommand);
+// Express app for Render
+const app = express();
+app.use(express.json());
 
-// Vercel webhook handler
-module.exports = async (req, res) => {
+// Webhook endpoint
+app.post('/api/webhook', async (req, res) => {
     try {
-        // Initialize bot once per serverless instance
-        if (!initialized) {
-            await bot.init();
-            initialized = true;
-        }
-
-        let body = '';
-        req.on('data', chunk => { body += chunk.toString(); });
-        req.on('end', async () => {
-            const update = JSON.parse(body);
-            await bot.handleUpdate(update);
-            res.status(200).json({ ok: true });
-        });
-
+        await bot.handleUpdate(req.body);
     } catch (err) {
         console.error('Webhook error:', err);
-        res.status(200).json({ ok: true });
     }
-};
+    res.status(200).json({ ok: true });
+});
+
+// Start server and bind to Render port
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
